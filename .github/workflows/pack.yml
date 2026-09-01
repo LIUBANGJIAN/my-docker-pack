@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: read # 赋予读取 GHCR 镜像的权限
+      packages: read
 
     steps:
       - name: Log in to GitHub Container Registry
@@ -21,10 +21,16 @@ jobs:
       - name: Pull and Save Images
         run: |
           docker pull ghcr.io/home-assistant/home-assistant:stable
-          docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx:latest
+          
+          # 尝试拉取 sherpa-onnx（如果不确定 tag，可以尝试不用 tag，或者明确指定版本）
+          docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx || docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx:1.0.0 || true
+          
           docker pull rhasspy/wyoming-faster-whisper:latest
           
-          docker save ghcr.io/home-assistant/home-assistant:stable ghcr.io/rhasspy/wyoming-sherpa-onnx:latest rhasspy/wyoming-faster-whisper:latest -o cinema-images.tar
+          # 打包已成功拉取的镜像（自动匹配本地已有的 sherpa-onnx 完整名称）
+          SHERPA_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep wyoming-sherpa-onnx | head -n 1)
+          
+          docker save ghcr.io/home-assistant/home-assistant:stable $SHERPA_IMG rhasspy/wyoming-faster-whisper:latest -o cinema-images.tar
 
       - name: Delete Old Release
         run: gh release delete v1.0.0 --yes || true
