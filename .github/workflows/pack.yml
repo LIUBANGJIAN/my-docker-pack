@@ -11,12 +11,7 @@ jobs:
       packages: read
 
     steps:
-      # 1. 匿名拉取 Docker Hub 上的镜像（不携带任何登录凭证）
-      - name: Pull Docker Hub Images
-        run: |
-          docker pull rhasspy/wyoming-faster-whisper:latest
-
-      # 2. 登录 GHCR 准备拉取 GitHub 托管的镜像
+      # 1. 先登录 GHCR，确保 GitHub 内部镜像可以无障碍拉取
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -24,33 +19,39 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. 从 GHCR 拉取 Home Assistant 和 xiasi0 的 sherpa-onnx
-      - name: Pull GHCR Images
+      # 2. 拉取所有需要的镜像（对 Docker Hub 明确添加 docker.io 前缀防报错）
+      - name: Pull All Docker Images
         run: |
+          # 1. 拉取 Home Assistant
           docker pull ghcr.io/home-assistant/home-assistant:stable
 
-          # 自动获取 xiasi0/wyoming-sherpa-onnx 的有效 Tag
+          # 2. 拉取 Wyoming Faster-Whisper (明确指定 docker.io 域名)
+          docker pull docker.io/rhasspy/wyoming-faster-whisper:latest
+
+          # 3. 动态抓取 xiasi0/wyoming-sherpa-onnx 的有效 Tag 并拉取
           TAG=$(gh api /users/xiasi0/packages/container/wyoming-sherpa-onnx/versions --jq '.[0].metadata.container.tags[0]' 2>/dev/null || echo "main")
-          echo "Sherpa-ONNX Tag: $TAG"
+          echo "Sherpa-ONNX 抓取到的有效 Tag 为: $TAG"
           
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:$TAG || \
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:master || \
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:main || true
 
-      # 4. 打包所有拉取到的镜像
+      # 3. 打包所有拉取的镜像为单个 tar 文件
       - name: Save Docker Images
         run: |
+          # 过滤并打包当前已成功下载的所有镜像
           IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "<none>")
-          echo "打包以下镜像："
+          echo "正在打包以下镜像："
           echo "$IMAGES"
           docker save $IMAGES -o cinema-images.tar
 
-      # 5. 发布 Release 提供下载
+      # 4. 删除旧的 Release，避免覆盖冲突
       - name: Delete Old Release
         run: gh release delete v1.0.0 --yes || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 5. 上传导出的 cinema-images.tar 到 Releases 页面
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
