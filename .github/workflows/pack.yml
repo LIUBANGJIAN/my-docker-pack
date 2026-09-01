@@ -11,7 +11,12 @@ jobs:
       packages: read
 
     steps:
-      # 1. 登录 GHCR 获得访问权限
+      # 1. 匿名拉取 Docker Hub 上的镜像（不携带任何登录凭证）
+      - name: Pull Docker Hub Images
+        run: |
+          docker pull rhasspy/wyoming-faster-whisper:latest
+
+      # 2. 登录 GHCR 准备拉取 GitHub 托管的镜像
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -19,30 +24,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. 动态查询 xiasi0/wyoming-sherpa-onnx 的实际最新 Tag 并拉取
-      - name: Pull All Images
+      # 3. 从 GHCR 拉取 Home Assistant 和 xiasi0 的 sherpa-onnx
+      - name: Pull GHCR Images
         run: |
           docker pull ghcr.io/home-assistant/home-assistant:stable
-          docker pull rhasspy/wyoming-faster-whisper:latest
 
-          # 获取 xiasi0/wyoming-sherpa-onnx 的最新版本 tag
+          # 自动获取 xiasi0/wyoming-sherpa-onnx 的有效 Tag
           TAG=$(gh api /users/xiasi0/packages/container/wyoming-sherpa-onnx/versions --jq '.[0].metadata.container.tags[0]' 2>/dev/null || echo "main")
-          echo "检测到 sherpa-onnx 的有效 Tag: $TAG"
+          echo "Sherpa-ONNX Tag: $TAG"
           
-          # 尝试拉取解析出的 Tag，若失败则尝试常规备用 Tag
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:$TAG || \
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:master || \
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:main || true
 
-      # 3. 自动匹配所有已成功拉取的镜像打包
+      # 4. 打包所有拉取到的镜像
       - name: Save Docker Images
         run: |
           IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "<none>")
-          echo "正在打包以下镜像："
+          echo "打包以下镜像："
           echo "$IMAGES"
           docker save $IMAGES -o cinema-images.tar
 
-      # 4. 发布到 Release 提供下载
+      # 5. 发布 Release 提供下载
       - name: Delete Old Release
         run: gh release delete v1.0.0 --yes || true
         env:
