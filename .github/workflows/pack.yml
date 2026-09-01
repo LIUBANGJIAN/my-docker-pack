@@ -1,12 +1,23 @@
 name: Pack Docker Images
 
 on:
-  workflow_dispatch: # 支持手动点击按钮触发
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read # 赋予读取 GHCR 镜像的权限
+
     steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Pull and Save Images
         run: |
           docker pull ghcr.io/home-assistant/home-assistant:stable
@@ -14,7 +25,12 @@ jobs:
           docker pull rhasspy/wyoming-faster-whisper:latest
           
           docker save ghcr.io/home-assistant/home-assistant:stable ghcr.io/rhasspy/wyoming-sherpa-onnx:latest rhasspy/wyoming-faster-whisper:latest -o cinema-images.tar
-          
+
+      - name: Delete Old Release
+        run: gh release delete v1.0.0 --yes || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
