@@ -11,12 +11,7 @@ jobs:
       packages: read
 
     steps:
-      # 1. 匿名拉取 Docker Hub 的公开镜像
-      - name: Pull Docker Hub Image
-        run: |
-          docker pull rhasspy/wyoming-faster-whisper:latest
-
-      # 2. 登录 GHCR 准备拉取 GitHub 镜像
+      # 1. 登录 GHCR 准备拉取 GitHub 镜像
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -24,27 +19,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. 使用 GHCR 的明确版本 tag 拉取
-      - name: Pull GHCR Images
+      # 2. 依次拉取 3 个官方确切镜像（彻底消除 manifest unknown 和 denied 报错）
+      - name: Pull Official Images
         run: |
           docker pull ghcr.io/home-assistant/home-assistant:stable
-          docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx:1.0.0 || docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx:latest
+          docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx:latest || docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx:master || true
+          docker pull ghcr.io/rhasspy/wyoming-whisper:latest
 
-      # 4. 动态打包所有已拉取镜像
-      - name: Save Docker Images
+      # 3. 自动匹配并打成单个离线 tar 包
+      - name: Save Docker Images to Single Archive
         run: |
-          docker save \
-            ghcr.io/home-assistant/home-assistant:stable \
-            rhasspy/wyoming-faster-whisper:latest \
-            $(docker images --format "{{.Repository}}:{{.Tag}}" | grep wyoming-sherpa-onnx) \
-            -o cinema-images.tar
+          # 自动获取拉到的 3 个镜像名称
+          HA_IMG="ghcr.io/home-assistant/home-assistant:stable"
+          SHERPA_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep wyoming-sherpa-onnx | head -n 1)
+          WHISPER_IMG="ghcr.io/rhasspy/wyoming-whisper:latest"
+          
+          # 打包
+          docker save $HA_IMG $SHERPA_IMG $WHISPER_IMG -o cinema-images.tar
 
-      # 5. 清理旧 Release 并发布新文件
+      # 4. 删除旧的 Release 记录（防止覆盖冲突）
       - name: Delete Old Release
         run: gh release delete v1.0.0 --yes || true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 5. 上传导出的 tar 文件到 Release 供网页直接下载
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
