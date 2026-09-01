@@ -11,7 +11,7 @@ jobs:
       packages: read
 
     steps:
-      # 1. 优先登录 GHCR 保证拉取权限
+      # 1. 登录 GHCR 准备拉取 GitHub 镜像
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -19,23 +19,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. 全程从 GHCR 拉取确切路径的官方镜像
-      - name: Pull All Images from GHCR
+      # 2. 从各自正确的源拉取镜像
+      - name: Pull All Correct Images
         run: |
           docker pull ghcr.io/home-assistant/home-assistant:stable
-          docker pull ghcr.io/rhasspy/wyoming-sherpa-onnx:latest
-          docker pull ghcr.io/rhasspy/wyoming-whisper:latest
+          docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:latest
+          docker pull rhasspy/wyoming-faster-whisper:latest
 
-      # 3. 打包导出为离线文件
+      # 3. 将 3 个镜像打包为一个离线文件
       - name: Save Docker Images
         run: |
           docker save \
             ghcr.io/home-assistant/home-assistant:stable \
-            ghcr.io/rhasspy/wyoming-sherpa-onnx:latest \
-            ghcr.io/rhasspy/wyoming-whisper:latest \
+            ghcr.io/xiasi0/wyoming-sherpa-onnx:latest \
+            rhasspy/wyoming-faster-whisper:latest \
             -o cinema-images.tar
 
-      # 4. 发布到 Release 提供网页下载
+      # 4. 清理旧 Release 并发布新离线包
       - name: Delete Old Release
         run: gh release delete v1.0.0 --yes || true
         env:
