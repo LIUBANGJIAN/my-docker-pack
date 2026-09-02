@@ -8,48 +8,49 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 清除凭证，进入纯匿名模式
+      # 1. 强制纯匿名模式
       - name: Force Anonymous Mode
         run: |
           docker logout ghcr.io || true
           docker logout docker.io || true
 
-      # 2. 匿名拉取 3 个镜像
+      # 2. 匿名拉取 3 个镜像并保存实际 tag
       - name: Pull Images
         run: |
           docker pull ghcr.io/home-assistant/home-assistant:stable
           docker pull rhasspy/wyoming-faster-whisper:latest || docker pull rhasspy/wyoming-whisper:latest
           
-          # 动态解析 xiasi0/wyoming-sherpa-onnx tag
+          # 动态解析 xiasi0/wyoming-sherpa-onnx tag 并拉取
           TAG=$(curl -s https://api.github.com/users/xiasi0/packages/container/wyoming-sherpa-onnx/versions | grep -o '"tags":\["[^"]*' | head -n 1 | cut -d'"' -f4 || echo "main")
+          echo "SHERPA_TAG=$TAG" >> $GITHUB_ENV
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:$TAG || docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:main || true
 
-      # 3. 分别导出镜像并直接打包压缩为 ZIP
+      # 3. 准确导出各自镜像并打包为 ZIP
       - name: Export and Zip Images
         run: |
           mkdir -p output
-          
-          # 动态匹配各自已拉取的真实镜像名称
-          HA_IMG="ghcr.io/home-assistant/home-assistant:stable"
-          WHISPER_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep wyoming | grep whisper | head -n 1)
-          SHERPA_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep wyoming-sherpa-onnx | head -n 1)
-          
-          echo "导出 Home Assistant: $HA_IMG"
-          docker save $HA_IMG -o home-assistant.tar
+
+          # 1. Home Assistant
+          echo "导出 Home Assistant..."
+          docker save ghcr.io/home-assistant/home-assistant:stable -o home-assistant.tar
           zip -j output/home-assistant.zip home-assistant.tar
           rm home-assistant.tar
 
-          echo "导出 Wyoming Whisper: $WHISPER_IMG"
+          # 2. Wyoming Whisper (精确匹配已下载的 whisper 镜像)
+          WHISPER_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep whisper | head -n 1)
+          echo "导出 Wyoming Whisper ($WHISPER_IMG)..."
           docker save $WHISPER_IMG -o wyoming-whisper.tar
           zip -j output/wyoming-whisper.zip wyoming-whisper.tar
           rm wyoming-whisper.tar
 
-          echo "导出 Wyoming Sherpa-ONNX: $SHERPA_IMG"
+          # 3. Wyoming Sherpa-ONNX (结合传入的变量或模糊匹配 sherpa)
+          SHERPA_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -i "sherpa" | head -n 1)
+          echo "导出 Wyoming Sherpa-ONNX ($SHERPA_IMG)..."
           docker save $SHERPA_IMG -o wyoming-sherpa-onnx.tar
           zip -j output/wyoming-sherpa-onnx.zip wyoming-sherpa-onnx.tar
           rm wyoming-sherpa-onnx.tar
 
-      # 4. 上传 Home Assistant 镜像 ZIP
+      # 4. 上传 Home Assistant
       - name: Upload Home Assistant Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -57,7 +58,7 @@ jobs:
           path: output/home-assistant.zip
           retention-days: 7
 
-      # 5. 上传 Wyoming Whisper 镜像 ZIP
+      # 5. 上传 Wyoming Whisper
       - name: Upload Wyoming Whisper Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -65,7 +66,7 @@ jobs:
           path: output/wyoming-whisper.zip
           retention-days: 7
 
-      # 6. 上传 Wyoming Sherpa-ONNX 镜像 ZIP
+      # 6. 上传 Wyoming Sherpa-ONNX
       - name: Upload Wyoming Sherpa-ONNX Artifact
         uses: actions/upload-artifact@v4
         with:
