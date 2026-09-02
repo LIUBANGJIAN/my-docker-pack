@@ -1,0 +1,8 @@
+# Home Assistant 官方镜像
+ghcr.io/home-assistant/home-assistant:stable
+
+# Wyoming Faster-Whisper
+rhasspy/wyoming-faster-whisper:latest
+
+# Wyoming Sherpa-ONNX (明确使用稳定标签)
+ghcr.io/xiasi0/wyoming-sherpa-onnx:main
