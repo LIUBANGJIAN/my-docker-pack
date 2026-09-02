@@ -8,49 +8,74 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 拉取仓库代码（读取 images.txt）
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. 清理登录凭证，切换至纯匿名模式
-      - name: Force Anonymous Mode
+      # 1. 登录 Docker Hub 镜像源与 GHCR，解决拉取频次限制与权限问题
+      - name: Log in to Docker Hub Anonymously & GHCR
         run: |
           docker logout ghcr.io || true
           docker logout docker.io || true
 
-      # 3. 读取 images.txt，逐个拉取、导出为 .tar 并打成 .zip
+      # 2. 解析 images.txt：支持直接拉取 & 源码构建
       - name: Process and Package Images
         run: |
           mkdir -p output
 
-          # 逐行读取 images.txt，忽略空行和以 # 开头的注释
-          grep -v '^#' images.txt | grep -v '^\s*$' | while read -r RAW_IMAGE; do
-            # 清理空格
-            IMAGE=$(echo "$RAW_IMAGE" | xargs)
-            echo "--------------------------------------------------"
-            echo "正在处理镜像: $IMAGE"
+          grep -v '^#' images.txt | grep -v '^\s*$' | while read -r RAW_LINE; do
+            LINE=$(echo "$RAW_LINE" | xargs)
+            echo "=================================================="
 
-            # 1. 尝试拉取镜像
-            if ! docker pull "$IMAGE"; then
-              echo "错误: 镜像 $IMAGE 拉取失败，跳过该镜像！"
-              continue
+            # --- 判断模式 A：源码构建 (build:https://...|image_tag) ---
+            if [[ "$LINE" == build:* ]]; then
+              # 提取 Git 地址和 Target Tag
+              BUILD_INFO=${LINE#build:}
+              GIT_URL=$(echo "$BUILD_INFO" | cut -d'|' -f1)
+              IMAGE_TAG=$(echo "$BUILD_INFO" | cut -d'|' -f2)
+              
+              [ -z "$IMAGE_TAG" ] && IMAGE_TAG="custom-build:latest"
+
+              echo "检测到【源码构建模式】:"
+              echo "Git 仓库: $GIT_URL"
+              echo "目标镜像: $IMAGE_TAG"
+
+              # 克隆并构建
+              rm -rf temp_repo
+              git clone --depth 1 "$GIT_URL" temp_repo
+              cd temp_repo
+              docker build -t "$IMAGE_TAG" .
+              cd ..
+              rm -rf temp_repo
+
+              TARGET_IMAGE="$IMAGE_TAG"
+
+            # --- 判断模式 B：直接拉取 (Docker Hub / GHCR) ---
+            else
+              TARGET_IMAGE="$LINE"
+              echo "检测到【直接拉取模式】: $TARGET_IMAGE"
+
+              # 尝试拉取，如果失败尝试加上 docker.io 显式重试
+              if ! docker pull "$TARGET_IMAGE"; then
+                echo "常规拉取失败，尝试显式指定 docker.io 拉取..."
+                docker pull "docker.io/$TARGET_IMAGE" || { echo "错误: $TARGET_IMAGE 拉取失败，跳过！"; continue; }
+                TARGET_IMAGE="docker.io/$TARGET_IMAGE"
+              fi
             fi
 
-            # 2. 提取镜像名称生成合法的文件名（如 ghcr.io/a/b:v1 -> ghcr.io-a-b-v1）
-            SAFE_NAME=$(echo "$IMAGE" | sed 's/[^a-zA-Z0-9._-]/_/g')
+            # --- 打包与压缩导出 ---
+            SAFE_NAME=$(echo "$TARGET_IMAGE" | sed 's/[^a-zA-Z0-9._-]/_/g')
             TAR_FILE="${SAFE_NAME}.tar"
             ZIP_FILE="output/${SAFE_NAME}.zip"
 
-            # 3. 导出并压缩
-            echo "正在导出为 $TAR_FILE ..."
-            docker save "$IMAGE" -o "$TAR_FILE"
+            echo "正在导出镜像 $TARGET_IMAGE 到 $TAR_FILE ..."
+            docker save "$TARGET_IMAGE" -o "$TAR_FILE"
 
             echo "正在压缩为 $ZIP_FILE ..."
             zip -j "$ZIP_FILE" "$TAR_FILE"
             rm -f "$TAR_FILE"
           done
 
-      # 4. 自动匹配 output 目录下的所有 ZIP，分别上传为独立的 Artifact
+      # 3. 将所有生成的 ZIP 独立上传到 Artifacts
       - name: Upload Image Artifacts
         uses: actions/upload-artifact@v4
         with:
