@@ -1,8 +1,8 @@
 # 1. 现成镜像：Home Assistant
 ghcr.io/home-assistant/home-assistant:stable
 
-# 2. 现成镜像：Wyoming Faster-Whisper
-rhasspy/wyoming-faster-whisper:latest
+# 2. 现成镜像：Wyoming Faster-Whisper (使用正确的官方 GHCR 镜像地址)
+ghcr.io/rhasspy/wyoming-faster-whisper:latest
 
-# 3. 源码构建：Wyoming Sherpa-ONNX（指定 Git 仓库地址和生成的镜像标签名）
+# 3. 源码构建：Wyoming Sherpa-ONNX
 build:https://github.com/xiasi0/wyoming-sherpa-onnx.git|wyoming-sherpa-onnx:local
