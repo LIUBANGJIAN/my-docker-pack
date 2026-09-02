@@ -3,8 +3,11 @@ name: Pack Docker Images
 on:
   workflow_dispatch:
 
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
+
 jobs:
-  # 1. 解析 images.txt 并生成动态矩阵
+  # 1. 解析 images.txt 并动态生成矩阵
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -16,11 +19,11 @@ jobs:
       - name: Generate Matrix
         id: set-matrix
         run: |
-          # 读取 images.txt 过滤注释和空行，转换为 JSON 数组
+          # 读取 images.txt，过滤掉注释和空行，转换为 JSON 数组
           JSON_ARRAY=$(grep -v '^#' images.txt | grep -v '^\s*$' | jq -R . | jq -s -c .)
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
-  # 2. 矩阵并行执行：一个镜像对应一个独立 Job 和独立 ZIP 产物
+  # 2. 矩阵并行构建与导出：每个镜像独立开一个 Job，独立打包为单个 ZIP
   build-and-pack:
     needs: prepare
     runs-on: ubuntu-latest
@@ -33,6 +36,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 清除凭证进入纯匿名模式，规避登录 Token 冲突
       - name: Force Anonymous Mode
         run: |
           docker logout ghcr.io || true
@@ -44,7 +48,7 @@ jobs:
           LINE="${{ matrix.target }}"
           echo "=================================================="
 
-          # 模式 A：源码构建 (build:https://github.com/xxx.git|tag_name)
+          # 模式 A：源码现场构建 (build:https://github.com/xxx.git|tag_name)
           if [[ "$LINE" == build:* ]]; then
             BUILD_INFO=${LINE#build:}
             GIT_URL=$(echo "$BUILD_INFO" | cut -d'|' -f1)
@@ -58,14 +62,14 @@ jobs:
             cd .. && rm -rf temp_repo
             TARGET_IMAGE="$IMAGE_TAG"
 
-          # 模式 B：直接拉取 (Docker Hub / GHCR)
+          # 模式 B：直接拉取模式 (Docker Hub 或 GHCR 镜像)
           else
             TARGET_IMAGE="$LINE"
             echo "【直接拉取模式】 镜像名: $TARGET_IMAGE"
             docker pull "$TARGET_IMAGE"
           fi
 
-          # 生成合法的文件名和唯一 Artifact 名称
+          # 格式化导出文件与 Artifacts 名称
           SAFE_NAME=$(echo "$TARGET_IMAGE" | sed 's/[^a-zA-Z0-9._-]/_/g')
           TAR_FILE="${SAFE_NAME}.tar"
           ZIP_FILE="${SAFE_NAME}.zip"
@@ -79,7 +83,7 @@ jobs:
           echo "zip_path=$ZIP_FILE" >> $GITHUB_OUTPUT
           echo "artifact_name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
-      # 3. 独立上传单个 ZIP，实现一个镜像对应一个独立 ZIP 文件
+      # 3. 独立上传单独的 ZIP Artifact（保存 7 天）
       - name: Upload Single Artifact
         uses: actions/upload-artifact@v4
         with:
