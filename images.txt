@@ -1,8 +1,8 @@
-# Home Assistant 官方镜像
+# 1. 现成镜像：Home Assistant
 ghcr.io/home-assistant/home-assistant:stable
 
-# Wyoming Faster-Whisper
+# 2. 现成镜像：Wyoming Faster-Whisper
 rhasspy/wyoming-faster-whisper:latest
 
-# Wyoming Sherpa-ONNX (明确使用稳定标签)
-ghcr.io/xiasi0/wyoming-sherpa-onnx:main
+# 3. 源码构建：Wyoming Sherpa-ONNX（指定 Git 仓库地址和生成的镜像标签名）
+build:https://github.com/xiasi0/wyoming-sherpa-onnx.git|wyoming-sherpa-onnx:local
