@@ -6,44 +6,69 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      # 1. 强制注销所有登录凭证，确保全局纯匿名访问
+      # 1. 清除凭证，进入纯匿名模式
       - name: Force Anonymous Mode
         run: |
           docker logout ghcr.io || true
           docker logout docker.io || true
 
-      # 2. 纯匿名方式拉取 Docker Hub 与 GHCR 镜像
-      - name: Pull Images Anonymously
+      # 2. 匿名拉取 3 个镜像
+      - name: Pull Images
         run: |
           docker pull ghcr.io/home-assistant/home-assistant:stable
           docker pull rhasspy/wyoming-faster-whisper:latest || docker pull rhasspy/wyoming-whisper:latest
           
-          # 匿名动态获取 xiasi0/wyoming-sherpa-onnx 镜像
+          # 动态解析 xiasi0/wyoming-sherpa-onnx tag
           TAG=$(curl -s https://api.github.com/users/xiasi0/packages/container/wyoming-sherpa-onnx/versions | grep -o '"tags":\["[^"]*' | head -n 1 | cut -d'"' -f4 || echo "main")
           docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:$TAG || docker pull ghcr.io/xiasi0/wyoming-sherpa-onnx:main || true
 
-      # 3. 打包镜像
-      - name: Save Docker Images
+      # 3. 分别导出镜像并直接打包压缩为 ZIP
+      - name: Export and Zip Images
         run: |
-          IMAGES=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "<none>")
-          echo "打包以下镜像："
-          echo "$IMAGES"
-          docker save $IMAGES -o cinema-images.tar
+          mkdir -p output
+          
+          # 动态匹配各自已拉取的真实镜像名称
+          HA_IMG="ghcr.io/home-assistant/home-assistant:stable"
+          WHISPER_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep wyoming | grep whisper | head -n 1)
+          SHERPA_IMG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep wyoming-sherpa-onnx | head -n 1)
+          
+          echo "导出 Home Assistant: $HA_IMG"
+          docker save $HA_IMG -o home-assistant.tar
+          zip -j output/home-assistant.zip home-assistant.tar
+          rm home-assistant.tar
 
-      # 4. 发布到 Release
-      - name: Delete Old Release
-        run: gh release delete v1.0.0 --yes || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "导出 Wyoming Whisper: $WHISPER_IMG"
+          docker save $WHISPER_IMG -o wyoming-whisper.tar
+          zip -j output/wyoming-whisper.zip wyoming-whisper.tar
+          rm wyoming-whisper.tar
 
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v1
+          echo "导出 Wyoming Sherpa-ONNX: $SHERPA_IMG"
+          docker save $SHERPA_IMG -o wyoming-sherpa-onnx.tar
+          zip -j output/wyoming-sherpa-onnx.zip wyoming-sherpa-onnx.tar
+          rm wyoming-sherpa-onnx.tar
+
+      # 4. 上传 Home Assistant 镜像 ZIP
+      - name: Upload Home Assistant Artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v1.0.0
-          files: cinema-images.tar
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: home-assistant-image
+          path: output/home-assistant.zip
+          retention-days: 7
+
+      # 5. 上传 Wyoming Whisper 镜像 ZIP
+      - name: Upload Wyoming Whisper Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wyoming-whisper-image
+          path: output/wyoming-whisper.zip
+          retention-days: 7
+
+      # 6. 上传 Wyoming Sherpa-ONNX 镜像 ZIP
+      - name: Upload Wyoming Sherpa-ONNX Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wyoming-sherpa-onnx-image
+          path: output/wyoming-sherpa-onnx.zip
+          retention-days: 7
