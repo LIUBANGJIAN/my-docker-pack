@@ -12,3 +12,6 @@ rhasspy/wyoming-piper:latest
 
 # 5. openWakeWord 唤醒词检测
 rhasspy/wyoming-openwakeword:latest
+
+# 6. 本地轻量大语言模型服务 (Ollama)
+ollama/ollama:latest
