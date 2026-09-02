@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 1. 解析 images.txt 生成矩阵参数
+  # 1. 解析 images.txt 并生成动态矩阵
   prepare:
     runs-on: ubuntu-latest
     outputs:
@@ -16,16 +16,17 @@ jobs:
       - name: Generate Matrix
         id: set-matrix
         run: |
+          # 读取 images.txt 过滤注释和空行，转换为 JSON 数组
           JSON_ARRAY=$(grep -v '^#' images.txt | grep -v '^\s*$' | jq -R . | jq -s -c .)
           echo "matrix=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
-  # 2. 为每个镜像独立打包并独立上传 ZIP
+  # 2. 矩阵并行执行：一个镜像对应一个独立 Job 和独立 ZIP 产物
   build-and-pack:
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: ${{ JSON(needs.prepare.outputs.matrix) }}
+        target: ${{ fromJSON(needs.prepare.outputs.matrix) }}
       fail-fast: false
 
     steps:
@@ -43,40 +44,42 @@ jobs:
           LINE="${{ matrix.target }}"
           echo "=================================================="
 
-          # 模式 A：源码构建
+          # 模式 A：源码构建 (build:https://github.com/xxx.git|tag_name)
           if [[ "$LINE" == build:* ]]; then
             BUILD_INFO=${LINE#build:}
             GIT_URL=$(echo "$BUILD_INFO" | cut -d'|' -f1)
             IMAGE_TAG=$(echo "$BUILD_INFO" | cut -d'|' -f2)
             [ -z "$IMAGE_TAG" ] && IMAGE_TAG="custom-build:latest"
 
-            echo "【源码构建】 $GIT_URL"
+            echo "【源码构建模式】 Git 仓库: $GIT_URL"
             git clone --depth 1 "$GIT_URL" temp_repo
             cd temp_repo
             docker build -t "$IMAGE_TAG" .
             cd .. && rm -rf temp_repo
             TARGET_IMAGE="$IMAGE_TAG"
 
-          # 模式 B：直接拉取
+          # 模式 B：直接拉取 (Docker Hub / GHCR)
           else
             TARGET_IMAGE="$LINE"
-            echo "【直接拉取】 $TARGET_IMAGE"
+            echo "【直接拉取模式】 镜像名: $TARGET_IMAGE"
             docker pull "$TARGET_IMAGE"
           fi
 
-          # 生成文件名与唯一 Artifact 名称
+          # 生成合法的文件名和唯一 Artifact 名称
           SAFE_NAME=$(echo "$TARGET_IMAGE" | sed 's/[^a-zA-Z0-9._-]/_/g')
           TAR_FILE="${SAFE_NAME}.tar"
           ZIP_FILE="${SAFE_NAME}.zip"
 
-          echo "正在导出 $TARGET_IMAGE ..."
+          echo "正在导出镜像 $TARGET_IMAGE 到 $TAR_FILE ..."
           docker save "$TARGET_IMAGE" -o "$TAR_FILE"
+          
+          echo "正在压缩为 $ZIP_FILE ..."
           zip -j "$ZIP_FILE" "$TAR_FILE"
           
           echo "zip_path=$ZIP_FILE" >> $GITHUB_OUTPUT
           echo "artifact_name=$SAFE_NAME" >> $GITHUB_OUTPUT
 
-      # 独立上传当前镜像的 ZIP（严格做到一镜像一 ZIP）
+      # 3. 独立上传单个 ZIP，实现一个镜像对应一个独立 ZIP 文件
       - name: Upload Single Artifact
         uses: actions/upload-artifact@v4
         with:
