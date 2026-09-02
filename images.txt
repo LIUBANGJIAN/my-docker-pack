@@ -9,3 +9,6 @@ build:https://github.com/xiasi0/wyoming-sherpa-onnx.git|wyoming-sherpa-onnx:loca
 
 # 4. 离线文本转语音 (TTS) - Piper
 rhasspy/wyoming-piper:latest
+
+# 5. openWakeWord 唤醒词检测
+rhasspy/wyoming-openwakeword:latest
